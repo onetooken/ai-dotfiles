@@ -1,48 +1,70 @@
-import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-function isAssistantMessage(message: unknown): message is AssistantMessage {
-	if (!message || typeof message !== "object") return false;
-	const role = (message as { role?: unknown }).role;
-	return role === "assistant";
-}
-
 export default function (pi: ExtensionAPI) {
-	let agentStartMs: number | null = null;
+	let providerStartMs: number | null = null;
 
-	pi.on("agent_start", () => {
-		agentStartMs = Date.now();
+	pi.on("before_provider_request", () => {
+		providerStartMs = Date.now();
 	});
 
-	pi.on("agent_end", (event, ctx) => {
+	pi.on("message_end", (event, ctx) => {
 		if (!ctx.hasUI) return;
-		if (agentStartMs === null) return;
+		if (event.message.role !== "assistant") return;
 
-		const elapsedMs = Date.now() - agentStartMs;
-		agentStartMs = null;
+		const usage = event.message.usage;
+		const output = usage.output || 0;
+		if (output <= 0 || providerStartMs === null) return;
+
+		const elapsedMs = Date.now() - providerStartMs;
+		providerStartMs = null;
 		if (elapsedMs <= 0) return;
 
-		let input = 0;
-		let output = 0;
-		let cacheRead = 0;
-		let cacheWrite = 0;
-		let totalTokens = 0;
-
-		for (const message of event.messages) {
-			if (!isAssistantMessage(message)) continue;
-			input += message.usage.input || 0;
-			output += message.usage.output || 0;
-			cacheRead += message.usage.cacheRead || 0;
-			cacheWrite += message.usage.cacheWrite || 0;
-			totalTokens += message.usage.totalTokens || 0;
-		}
-
-		if (output <= 0) return;
+		const input = usage.input || 0;
+		const cacheRead = usage.cacheRead || 0;
+		const cacheWrite = usage.cacheWrite || 0;
+		const totalTokens = usage.totalTokens || 0;
 
 		const elapsedSeconds = elapsedMs / 1000;
-		const tokensPerSecond = output / elapsedSeconds;
-		const cacheHitRate = input + cacheRead + cacheWrite > 0 ? (cacheRead / (input + cacheRead + cacheWrite)) * 100 : 0;
-		const message = `TPS ${tokensPerSecond.toFixed(1)} tok/s. out ${output.toLocaleString()}, in ${input.toLocaleString()}, cache r/w ${cacheRead.toLocaleString()}/${cacheWrite.toLocaleString()} (${cacheHitRate.toFixed(2)}%), total ${totalTokens.toLocaleString()}, ${elapsedSeconds.toFixed(1)}s`;
-		ctx.ui.notify(message, "info");
+		const tps = output / elapsedSeconds;
+		const cacheRate =
+			input + cacheRead + cacheWrite > 0
+				? (cacheRead / (input + cacheRead + cacheWrite)) * 100
+				: 0;
+
+		const theme = ctx.ui.theme;
+		const sep = theme.fg("dim", " │ ");
+
+		// TPS: <20 red, 20-50 yellow, >50 green
+		const tpsText = `${tps.toFixed(1)} tok/s`;
+		let styledTps: string;
+		if (tps < 20) {
+			styledTps = theme.fg("error", tpsText);
+		} else if (tps < 50) {
+			styledTps = theme.fg("warning", tpsText);
+		} else {
+			styledTps = theme.fg("success", tpsText);
+		}
+
+		// Cache rate: <50% red, 50-90% yellow, >90% green
+		const cacheText = `${cacheRate.toFixed(2)}%`;
+		let styledCache: string;
+		if (cacheRate < 50) {
+			styledCache = theme.fg("error", cacheText);
+		} else if (cacheRate < 90) {
+			styledCache = theme.fg("warning", cacheText);
+		} else {
+			styledCache = theme.fg("success", cacheText);
+		}
+
+		// Details: token counts and time
+		const details = theme.fg(
+			"dim",
+			`out ${output.toLocaleString()} in ${input.toLocaleString()} total ${totalTokens.toLocaleString()} ${elapsedSeconds.toFixed(1)}s`,
+		);
+
+		ctx.ui.setStatus(
+			"stats",
+			`TPS ${styledTps}${sep}cache ${styledCache}${sep}${details}`,
+		);
 	});
 }
