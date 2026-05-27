@@ -68,16 +68,16 @@ export default function (pi: ExtensionAPI) {
 			styledCache = theme.fg("success", cacheText);
 		}
 
-		// TTFT: <3s green, 3-10s yellow, >10s red
+		// TTFT: <1s green, 1-5s yellow, >5s red
 		let styledTtft = "";
 		if (tokenMs !== null) {
 			const ttftSeconds = (tokenMs - startMs) / 1000;
 			const ttftPercent = (ttftSeconds / elapsedSeconds) * 100;
 
 			const ttftText = `${ttftSeconds.toFixed(1)}s(${ttftPercent.toFixed(2)}%)`;
-			if (ttftSeconds < 3) {
+			if (ttftSeconds < 1) {
 				styledTtft = theme.fg("success", ttftText);
-			} else if (ttftSeconds < 10) {
+			} else if (ttftSeconds < 5) {
 				styledTtft = theme.fg("warning", ttftText);
 			} else {
 				styledTtft = theme.fg("error", ttftText);
