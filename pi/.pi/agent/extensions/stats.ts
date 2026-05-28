@@ -65,7 +65,7 @@ export default function (pi: ExtensionAPI) {
 		if (tokenMs !== null) {
 			const ttftMs = tokenMs - startMs;
 			const genMs = elapsedMs - ttftMs;
-			if (genMs >= 100) {
+			if (genMs >= 1000) {
 				const genTps = output / (genMs / 1000);
 				genTpsPart = `(⚡${colorThreshold(theme, genTps, 20, 50, genTps.toFixed(1))})`;
 			} else {
