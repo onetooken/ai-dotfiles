@@ -1,5 +1,17 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
+function colorThreshold(
+	theme: ReturnType<ExtensionAPI["ui"]["theme"]>,
+	value: number,
+	lo: number,
+	hi: number,
+	text: string,
+): string {
+	if (value < lo) return theme.fg("error", text);
+	if (value < hi) return theme.fg("warning", text);
+	return theme.fg("success", text);
+}
+
 export default function (pi: ExtensionAPI) {
 	let providerStartMs: number | null = null;
 	let firstTokenMs: number | null = null;
@@ -46,35 +58,31 @@ export default function (pi: ExtensionAPI) {
 		const theme = ctx.ui.theme;
 		const sep = theme.fg("dim", " │ ");
 
-		// TPS: <20 red, 20-50 yellow, >50 green
-		const tpsText = `${tps.toFixed(1)} tok/s`;
-		let styledTps: string;
-		if (tps < 20) {
-			styledTps = theme.fg("error", tpsText);
-		} else if (tps < 50) {
-			styledTps = theme.fg("warning", tpsText);
+		const styledTps = colorThreshold(theme, tps, 20, 50, tps.toFixed(1));
+
+		// Generation TPS (excluding TTFT)
+		let genTpsPart: string;
+		if (tokenMs !== null) {
+			const ttftMs = tokenMs - startMs;
+			const genMs = elapsedMs - ttftMs;
+			if (genMs >= 100) {
+				const genTps = output / (genMs / 1000);
+				genTpsPart = `(⚡${colorThreshold(theme, genTps, 20, 50, genTps.toFixed(1))})`;
+			} else {
+				genTpsPart = theme.fg("dim", "(⚡-)");
+			}
 		} else {
-			styledTps = theme.fg("success", tpsText);
+			genTpsPart = theme.fg("dim", "(⚡-)");
 		}
 
-		// CACHE: <50% red, 50-90% yellow, >90% green
-		const cacheText = `${cacheRate.toFixed(2)}%`;
-		let styledCache: string;
-		if (cacheRate < 50) {
-			styledCache = theme.fg("error", cacheText);
-		} else if (cacheRate < 90) {
-			styledCache = theme.fg("warning", cacheText);
-		} else {
-			styledCache = theme.fg("success", cacheText);
-		}
+		const styledCache = colorThreshold(theme, cacheRate, 50, 90, `${cacheRate.toFixed(2)}%`);
 
-		// TTFT: <1s green, 1-5s yellow, >5s red
 		let styledTtft = "";
 		if (tokenMs !== null) {
 			const ttftSeconds = (tokenMs - startMs) / 1000;
 			const ttftPercent = (ttftSeconds / elapsedSeconds) * 100;
-
 			const ttftText = `${ttftSeconds.toFixed(1)}s(${ttftPercent.toFixed(2)}%)`;
+			// TTFT is inverted: lower is better, so swap lo/hi semantics
 			if (ttftSeconds < 1) {
 				styledTtft = theme.fg("success", ttftText);
 			} else if (ttftSeconds < 5) {
@@ -93,7 +101,7 @@ export default function (pi: ExtensionAPI) {
 		const ttftPart = styledTtft ? `TTFT ${styledTtft}${sep}` : "";
 		ctx.ui.setStatus(
 			"stats",
-			`TPS ${styledTps}${sep}${ttftPart}CACHE ${styledCache}${sep}${details}`,
+			`TPS ${styledTps}${genTpsPart} tok/s${sep}${ttftPart}CACHE ${styledCache}${sep}${details}`,
 		);
 	});
 }
